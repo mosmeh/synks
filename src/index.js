@@ -67,7 +67,7 @@ async function setupSynth() {
     synth.chorusEnabled = chorusOn.checked;
 
     const params = {};
-    ['brightness', 'position'].forEach((param) => {
+    ['voices', 'brightness', 'position'].forEach((param) => {
         const slider = document.getElementById(param);
         slider.addEventListener('input', (e) => {
             params[param] = +e.target.value;

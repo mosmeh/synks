@@ -83,7 +83,7 @@ class PositionFilter {
 class DampingFilter {
     constructor() {
         this._freq = MIN_FREQ;
-        this._decay = 4;
+        this._decay = 3;
         this._x1 = this._x2 = 0;
         this._brightness = 0.5;
         this._calcRho();
@@ -144,9 +144,11 @@ class DynamicLevelFilter {
     }
 }
 
-class KSString {
-    constructor() {
+class Voice {
+    constructor(num) {
+        this.num = num;
         this._freq = MIN_FREQ;
+        this._duration = 3 * sampleRate;
         this._delay = new Delay(sampleRate / MIN_FREQ);
         this._posFilter = new PositionFilter();
         this._dampFilter = new DampingFilter();
@@ -162,9 +164,14 @@ class KSString {
         this._dampFilter.freq = freq;
         this._dynFilter.freq = freq;
 
+        this._duration = decay * sampleRate;
         this._dampFilter.brightness = brightness;
         this._dampFilter.decay = decay;
         this._posFilter.position = position;
+    }
+
+    get playing() {
+        return this._i <= this._duration;
     }
 
     pluck(amp) {
@@ -198,34 +205,61 @@ class Processor extends AudioWorkletProcessor {
     constructor() {
         super();
 
-        this._strings = [];
+        this._voices = [];
         this.port.onmessage = (msg) => {
             const { data } = msg;
             switch (data.type) {
                 case 'params':
-                    const params = data.params;
-                    while (this._strings.length < params.freqs.length) {
-                        this._strings.push(new KSString());
+                    this._params = data.params;
+                    while (this._voices.length > this._params.voices) {
+                        this._voices.shift();
                     }
-                    params.freqs.forEach((freq, i) => {
-                        this._strings[i].setParams({ ...params, freq });
+                    this._voices.forEach((voice) => {
+                        voice.setParams({
+                            ...this._params,
+                            freq: this._params.freqs[voice.num],
+                        });
                     });
-                    break;
+                    return;
                 case 'pluck':
-                    this._strings[data.which].pluck(data.amp);
-                    break;
+                    const i = this._voices.findIndex(
+                        (voice) => voice.num === data.which
+                    );
+                    if (i >= 0) {
+                        const [voice] = this._voices.splice(i, 1);
+                        voice.pluck(data.amp);
+                        this._voices.push(voice);
+                        return;
+                    }
+
+                    const voice = new Voice(data.which);
+                    voice.setParams({
+                        ...this._params,
+                        freq: this._params.freqs[data.which],
+                    });
+                    voice.pluck(data.amp);
+                    this._voices.push(voice);
+                    while (this._voices.length > this._params.voices) {
+                        this._voices.shift();
+                    }
+
+                    return;
             }
         };
     }
 
     process(_, outputs) {
         const out = outputs[0][0];
+
         for (let i = 0; i < out.length; ++i) {
-            out[i] = this._strings.reduce(
-                (sum, string) => sum + string.process(),
+            out[i] = this._voices.reduce(
+                (sum, voice) => sum + voice.process(),
                 0
             );
         }
+
+        this._voices = this._voices.filter((voice) => voice.playing);
+
         return true;
     }
 }
