@@ -1,0 +1,23 @@
+name: deploy
+
+on:
+    push:
+        branches:
+            - master
+
+jobs:
+    deploy:
+        runs-on: ubuntu-20.04
+        steps:
+            - uses: actions/checkout@v2
+            - run: npm ci
+            - run: npm run lint
+            - run: npm run checkfmt
+            - run: npm run build
+            - uses: peaceiris/actions-gh-pages@v3
+              with:
+                  github_token: ${{ secrets.GITHUB_TOKEN }}
+                  publish_dir: ./public
+                  enable_jekyll: false
+                  commit_message: ${{ github.event.head_commit.message }}
+                  force_orphan: true
